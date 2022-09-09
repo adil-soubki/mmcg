@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "multilingual"
+name = "template"
 version = "0.1.0"
 description = ""
 authors = ["Adil Soubki <adil.soubki@stonybrook.edu>"]

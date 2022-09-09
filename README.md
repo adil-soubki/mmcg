@@ -1,1 +1,1 @@
-Tooling for multilingual belief pipline.
+Some boilerplate I use often.
