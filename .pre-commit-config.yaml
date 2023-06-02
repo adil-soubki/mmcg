@@ -1,6 +1,6 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
-files: ^(lib/|bin/)
+exclude: ^(lib/|data/)
 repos:
   - repo: https://github.com/psf/black
     rev: 22.8.0

@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
+import io
 import logging
 import os
 import subprocess
 import sys
 from typing import Dict, Iterable, Optional
+
+import pandas as pd  # type: ignore
 
 from .functional import safe_iter
 
@@ -55,3 +58,17 @@ def sbatch(
         input="\n".join(stdin).encode("utf-8"),
         check=True,
     )
+
+
+def sinfo() -> pd.DataFrame:
+    cproc = subprocess.run("sinfo", capture_output=True, check=True)
+    return pd.read_csv(io.StringIO(cproc.stdout.decode("utf-8")), sep="\s+")
+
+
+def timelimit(partition: str) -> str:
+    df = sinfo()
+    if partition not in df.PARTITION.unique():
+        raise ValueError(f"unknown partition: {partition}")
+    tls = df[df.PARTITION == partition].TIMELIMIT.unique()
+    assert len(tls) == 1
+    return str(tls[0])
