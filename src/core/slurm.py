@@ -6,7 +6,7 @@ import subprocess
 import sys
 from typing import Dict, Iterable, Optional
 
-import pandas as pd  # type: ignore
+import pandas as pd
 
 from .functional import safe_iter
 
@@ -24,7 +24,7 @@ def sbatch(
     flags: Optional[Dict[str, str]] = None,
     modules: Optional[Iterable[str]] = None,
     dryrun: bool = False,
-) -> "subprocess.CompletedProcess[bytes]":
+) -> subprocess.CompletedProcess[bytes]:
     # Parse inputs.
     cmds = safe_iter(cmds)
     flags = flags or _FLAGS
