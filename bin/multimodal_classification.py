@@ -81,28 +81,29 @@ def main(ctx: Context) -> None:
     # Preprocess training data.
     feature_extractor = tf.AutoFeatureExtractor.from_pretrained(
         model_args.audio_model_name_or_path
-    )
+    ) if model_args.audio_model_name_or_path else None
     tokenizer = tf.AutoTokenizer.from_pretrained(
         model_args.text_model_name_or_path
-    )
-    assert tokenizer.model_max_length >= data_args.max_seq_length
+    ) if model_args.text_model_name_or_path else None
+    assert not tokenizer or (tokenizer.model_max_length >= data_args.max_seq_length)
     minds = minds.cast_column("audio", datasets.Audio(sampling_rate=16_000))
     def preprocess_fn(examples):
+        dummy = [[0]] * len(examples["intent_class"])
         # Audio processing.
         audio_arrays = [x["array"] for x in examples["audio"]]
         inputs = feature_extractor(
             audio_arrays,
-            sampling_rate=feature_extractor.sampling_rate,
+            sampling_rate=getattr(feature_extractor, "sampling_rate", 16_000),
             max_length=16_000,
             truncation=True
-        )
+        ) if feature_extractor else {"input_values": dummy}
         # Text processing.
         inputs |= tokenizer(
             examples["english_transcription"],
             padding="max_length",
             max_length=data_args.max_seq_length,
             truncation=True
-        )
+        ) if tokenizer else {"input_ids": dummy, "attention_mask": dummy}
         return inputs
     minds = minds.map(preprocess_fn, batched=True, batch_size=16)
     minds = minds.rename_columns({
