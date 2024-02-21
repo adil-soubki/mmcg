@@ -56,6 +56,9 @@ def main(ctx: Context) -> None:
         )
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    ctx.log.info(f"Training parameters {training_args}")
+    ctx.log.info(f"Data parameters {data_args}")
+    ctx.log.info(f"Model parameters {model_args}")
     # Select lowest memory GPU
     os.environ["CUDA_VISIBLE_DEVICES"] = str(nvidia.best_gpu())
     ctx.log.info(f"CUDA_VISIBLE_DEVICES: {os.environ['CUDA_VISIBLE_DEVICES']}")
@@ -108,11 +111,17 @@ def main(ctx: Context) -> None:
         "input_values": "audio_input_values",
         "intent_class": "label",
     })
+    train_dataset, eval_dataset = minds["train"], minds["test"]
     # Model training.
     model = MultimodalClassifier(model_args)
-    #  model = tf.AutoModel.from_pretrained(model_args.text_model_name_or_path)
-    def compute_metrics(eval_pred):
+    def compute_metrics(eval_pred: tf.EvalPrediction):
         predictions = np.argmax(eval_pred.predictions, axis=1)
+        # Save predictions to file.
+        cols = ["transcription", "english_transcription", "label", "lang_id"]
+        pdf = minds["test"].to_pandas()[cols].assign(pred=predictions)
+        assert (pdf.label == eval_pred.label_ids).all()
+        pdf.to_csv(os.path.join(training_args.output_dir, "preds.csv"))
+        # Return metrics.
         return evaluate.load("accuracy").compute(
             predictions=predictions,
             references=eval_pred.label_ids
@@ -120,12 +129,16 @@ def main(ctx: Context) -> None:
     trainer = tf.Trainer(
         model=model,
         args=training_args,
-        train_dataset=minds["train"],
-        eval_dataset=minds["test"],
-        #  tokenizer=feature_extractor,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         compute_metrics=compute_metrics,
     )
     trainer.train()
+    # Evaluation
+    if training_args.do_eval:
+        metrics = trainer.evaluate(eval_dataset=eval_dataset)
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
 
 
 if __name__ == "__main__":

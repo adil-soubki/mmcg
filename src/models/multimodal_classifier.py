@@ -17,21 +17,14 @@ def freeze_params(module: torch.nn.Module) -> None:
         param.requires_grad = False
 
 
-# XXX: This doesn't need to make the tokenizers.
 # TODO: https://stackoverflow.com/questions/73948214/how-to-convert-a-pytorch-nn-module-into-a-huggingface-pretrainedmodel-object
 class MultimodalClassifier(torch.nn.Module):
     def __init__(self, config: ModelArguments):
         super().__init__()
         self.config = config
         # Load the text model.
-        #  self.text_tokenizer = tf.AutoTokenizer.from_pretrained(
-        #      config.text_model_name_or_path
-        #  )
         self.text_model = tf.AutoModel.from_pretrained(config.text_model_name_or_path)
         # Load the audio model.
-        #  self.audio_feature_extractor = tf.AutoFeatureExtractor.from_pretrained(
-        #      config.audio_model_name_or_path
-        #  )
         self.audio_model = tf.AutoModel.from_pretrained(config.audio_model_name_or_path)
         # Initialize classification head.
         self.classifier_proj_size = (
