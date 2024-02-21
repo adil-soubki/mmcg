@@ -1,0 +1,26 @@
+{
+    "text_model_name_or_path": "google/flan-t5-base",
+    "audio_model_name_or_path": "facebook/wav2vec2-base",
+    "output_dir": "outputs/multimodal",
+    "overwrite_output_dir": true,
+
+    "save_total_limit": 1,
+    "load_best_model_at_end": true,
+    "metric_for_best_model": "accuracy",
+    "greater_is_better": false,
+    "save_strategy": "epoch",
+    "evaluation_strategy": "epoch",
+
+    "do_regression": false,
+    "do_train": true,
+    "do_eval": true,
+    "train_file": "path/to/train.csv",
+    "validation_file": "path/to/dev.csv",
+
+    "max_seq_length": 256,
+    "per_device_train_batch_size": 2,
+    "per_device_eval_batch_size": 2,
+    "learning_rate": 2e-5,
+    "num_train_epochs": 10,
+    "save_safetensors": false
+}
