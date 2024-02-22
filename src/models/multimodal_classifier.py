@@ -1,22 +1,41 @@
 # -*- coding: utf-8 -*-
 import dataclasses
-from typing import Optional
+from typing import Literal, Optional
 
 import torch
 import transformers as tf
 
 
+type PoolerType = Literal["max", "mean", "sum"]  # XXX: Unused currently.
 @dataclasses.dataclass
 class ModelArguments:
     text_model_name_or_path: Optional[str] = dataclasses.field(default=None)
     audio_model_name_or_path: Optional[str] = dataclasses.field(default=None)
     num_classes: Optional[int] = dataclasses.field(default=None)
+    # XXX: Unused currently
+    text_pooler_type: Optional[PoolerType] = dataclasses.field(default="max")
+    audio_pooler_type: Optional[PoolerType] = dataclasses.field(default="max")
 
 
 # XXX: Unused currently.
 def freeze_params(module: torch.nn.Module) -> None:
     for param in module.parameters():
         param.requires_grad = False
+
+
+# XXX: Unused currently.
+def pooler(features: torch.Tensor, dim:int, pooler_type: PoolerType) -> torch.Tensor:
+    if not features.numel():
+        return features  # Nothing to pool.
+    if pooler_type == "max":
+        pooler = lambda t, d: torch.max(t, dim=d).values
+    elif pooler_type == "mean":
+        pooler = torch.mean
+    elif pooler_type == "sum":
+        pooler = torch.sum
+    else:
+        raise ValueError(f"unknown pooler_type: {pooler_type}")
+    return pooler(features, dim=dim)
 
 
 # TODO: https://stackoverflow.com/questions/73948214/how-to-convert-a-pytorch-nn-module-into-a-huggingface-pretrainedmodel-object
