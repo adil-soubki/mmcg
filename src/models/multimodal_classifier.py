@@ -6,7 +6,7 @@ import torch
 import transformers as tf
 
 
-type PoolerType = Literal["max", "mean", "sum"]  # XXX: Unused currently.
+PoolerType = Literal["max", "mean", "sum"]  # XXX: Unused currently.
 @dataclasses.dataclass
 class ModelArguments:
     text_model_name_or_path: Optional[str] = dataclasses.field(default=None)
@@ -55,6 +55,7 @@ class MultimodalClassifier(torch.nn.Module):
             if config.audio_model_name_or_path
             else None
         )
+        self.audio_model.config.mask_time_length = 1  # XXX: Some clips are very short.
         # Throw if neither is given.
         if not self.text_model and not self.audio_model:
             raise ValueError("No text or audio model specified.")

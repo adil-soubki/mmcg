@@ -14,12 +14,13 @@ import transformers as tf
 from src.core import nvidia
 from src.core.context import Context
 from src.core.app import harness
+from src.data import commitment_bank
 from src.models.multimodal_classifier import MultimodalClassifier, ModelArguments
 
 
 @dataclasses.dataclass
 class DataArguments:
-    do_regression: bool = dataclasses.field(
+    do_regression: bool = dataclasses.field(  # XXX: Unsupported currently.
         default=None,
         metadata={
             "help": (
@@ -37,12 +38,6 @@ class DataArguments:
 		"will be padded."
             )
         },
-    )
-    train_file: Optional[str] = dataclasses.field(
-        default=None, metadata={"help": "A csv or a json file containing the training data."}
-    )
-    validation_file: Optional[str] = dataclasses.field(
-        default=None, metadata={"help": "A csv or a json file containing the validation data."}
     )
 
 
@@ -65,18 +60,10 @@ def main(ctx: Context) -> None:
     # Set seed before initializing model.
     tf.set_seed(training_args.seed)
     # Load training data.
-    minds = datasets.load_dataset(
-        "PolyAI/minds14",
-        name="en-US",
-        split="train",
-        trust_remote_code=True
+    data = commitment_bank.load().train_test_split(
+        test_size=0.2, seed=training_args.seed
     )
-    minds = minds.train_test_split(test_size=0.2)
-    labels = minds["train"].features["intent_class"].names
-    label2id, id2label = dict(), dict()
-    for i, label in enumerate(labels):
-        label2id[label] = str(i)
-        id2label[str(i)] = label
+    labels = sorted(set(data["train"]["cb_val"]))
     model_args.num_classes = model_args.num_classes or len(labels)
     # Preprocess training data.
     feature_extractor = tf.AutoFeatureExtractor.from_pretrained(
@@ -86,9 +73,9 @@ def main(ctx: Context) -> None:
         model_args.text_model_name_or_path
     ) if model_args.text_model_name_or_path else None
     assert not tokenizer or (tokenizer.model_max_length >= data_args.max_seq_length)
-    minds = minds.cast_column("audio", datasets.Audio(sampling_rate=16_000))
+    data = data.cast_column("audio", datasets.Audio(sampling_rate=16_000))
     def preprocess_fn(examples):
-        dummy = [[0]] * len(examples["intent_class"])
+        dummy = [[0]] * len(list(examples.keys())[0])
         # Audio processing.
         audio_arrays = [x["array"] for x in examples["audio"]]
         inputs = feature_extractor(
@@ -99,31 +86,31 @@ def main(ctx: Context) -> None:
         ) if feature_extractor else {"input_values": dummy}
         # Text processing.
         inputs |= tokenizer(
-            examples["english_transcription"],
+            examples["cb_target"],
             padding="max_length",
             max_length=data_args.max_seq_length,
             truncation=True
         ) if tokenizer else {"input_ids": dummy, "attention_mask": dummy}
         return inputs
-    minds = minds.map(preprocess_fn, batched=True, batch_size=16)
-    minds = minds.rename_columns({
+    data = data.map(preprocess_fn, batched=True, batch_size=16)
+    data = data.rename_columns({
         "input_ids": "text_input_ids",
         "attention_mask": "text_attention_mask",
         "input_values": "audio_input_values",
-        "intent_class": "label",
+        "cb_val": "label",
     })
-    train_dataset, eval_dataset = minds["train"], minds["test"]
+    train_dataset, eval_dataset = data["train"], data["test"]
     # Model training.
     model = MultimodalClassifier(model_args)
     def compute_metrics(eval_pred: tf.EvalPrediction):
         predictions = np.argmax(eval_pred.predictions, axis=1)
         # Save predictions to file.
-        cols = ["transcription", "english_transcription", "label", "lang_id"]
-        pdf = minds["test"].to_pandas()[cols].assign(pred=predictions)
+        cols = ["number", "clip_start", "clip_end", "cb_target", "label"]
+        pdf = eval_dataset.to_pandas()[cols].assign(pred=predictions)
         assert (pdf.label == eval_pred.label_ids).all()
         pdf.to_csv(os.path.join(training_args.output_dir, "preds.csv"))
         # Return metrics.
-        return evaluate.load("accuracy").compute(
+        return evaluate.load(training_args.metric_for_best_model).compute(
             predictions=predictions,
             references=eval_pred.label_ids
         )

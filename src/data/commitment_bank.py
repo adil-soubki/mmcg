@@ -18,6 +18,7 @@ def load() -> datasets.Dataset:
     )[["number", "clip_start", "clip_end", "audio", "cb_target", "cb_val"]].astype(str)
     # Some rows (exactly 2) do not have a switchboard file to match so number is blank.
     df = df.replace("", np.nan).dropna().astype({"number": int, "cb_val": float})
+    df = df.assign(cb_val=df.cb_val.round().astype(int) + 3)  # XXX: Descretize for now.
     cb = datasets.Dataset.from_pandas(df, preserve_index=False)
     cb = cb.cast_column("audio", datasets.Audio(sampling_rate=16_000))
     return cb
