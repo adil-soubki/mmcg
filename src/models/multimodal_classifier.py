@@ -55,6 +55,7 @@ class MultimodalClassifier(torch.nn.Module):
             if config.audio_model_name_or_path
             else None
         )
+        # TODO: Only lower this when needed?
         self.audio_model.config.mask_time_length = 1  # XXX: Some clips are very short.
         # Throw if neither is given.
         if not self.text_model and not self.audio_model:
