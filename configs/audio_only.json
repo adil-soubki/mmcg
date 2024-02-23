@@ -10,6 +10,9 @@
     "save_strategy": "epoch",
     "evaluation_strategy": "epoch",
 
+    "data_seed": 19,
+    "data_num_folds": 5,
+    "data_fold": 0,
     "do_regression": false,
     "do_train": true,
     "do_eval": true,

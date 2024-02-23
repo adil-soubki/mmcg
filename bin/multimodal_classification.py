@@ -4,7 +4,6 @@
 import dataclasses
 import os
 import sys
-from typing import Optional
 
 import datasets
 import evaluate
@@ -18,9 +17,10 @@ from src.data import commitment_bank
 from src.models.multimodal_classifier import MultimodalClassifier, ModelArguments
 
 
-# TODO: Support k-fold cross-validation.
 @dataclasses.dataclass
 class DataArguments:
+    data_num_folds: int
+    data_fold: int
     do_regression: bool = dataclasses.field(  # XXX: Unsupported currently.
         default=None,
         metadata={
@@ -52,6 +52,10 @@ def main(ctx: Context) -> None:
         )
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    # Make a directory per fold.
+    training_args.output_dir = os.path.join(
+        training_args.output_dir, f"fold_{data_args.data_fold}"
+    )
     ctx.log.info(f"Training parameters {training_args}")
     ctx.log.info(f"Data parameters {data_args}")
     ctx.log.info(f"Model parameters {model_args}")
@@ -61,8 +65,10 @@ def main(ctx: Context) -> None:
     # Set seed before initializing model.
     tf.set_seed(training_args.seed)
     # Load training data.
-    data = commitment_bank.load().train_test_split(
-        test_size=0.2, seed=training_args.seed
+    data = commitment_bank.load_kfold(
+        fold=data_args.data_fold,
+        k=data_args.data_num_folds,
+        seed=training_args.data_seed
     )
     labels = sorted(set(data["train"]["cb_val"]))
     model_args.num_classes = model_args.num_classes or len(labels)
