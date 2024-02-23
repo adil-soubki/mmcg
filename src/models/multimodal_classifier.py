@@ -56,7 +56,8 @@ class MultimodalClassifier(torch.nn.Module):
             else None
         )
         # TODO: Only lower this when needed?
-        self.audio_model.config.mask_time_length = 1  # XXX: Some clips are very short.
+        if self.audio_model:
+            self.audio_model.config.mask_time_length = 1  # XXX: Some clips are very short.
         # Throw if neither is given.
         if not self.text_model and not self.audio_model:
             raise ValueError("No text or audio model specified.")
@@ -106,6 +107,7 @@ class MultimodalClassifier(torch.nn.Module):
         # Compute loss.
         loss = None
         if labels is not None:
+            # TODO: Consider weighting?
             loss_fct = torch.nn.CrossEntropyLoss()
             loss = loss_fct(logits.view(-1, self.config.num_classes), labels.view(-1))
         # Return.

@@ -18,6 +18,7 @@ from src.data import commitment_bank
 from src.models.multimodal_classifier import MultimodalClassifier, ModelArguments
 
 
+# TODO: Support k-fold cross-validation.
 @dataclasses.dataclass
 class DataArguments:
     do_regression: bool = dataclasses.field(  # XXX: Unsupported currently.
@@ -75,7 +76,7 @@ def main(ctx: Context) -> None:
     assert not tokenizer or (tokenizer.model_max_length >= data_args.max_seq_length)
     data = data.cast_column("audio", datasets.Audio(sampling_rate=16_000))
     def preprocess_fn(examples):
-        dummy = [[0]] * len(list(examples.keys())[0])
+        dummy = [[0]] * len(examples[list(examples.keys())[0]])
         # Audio processing.
         audio_arrays = [x["array"] for x in examples["audio"]]
         inputs = feature_extractor(

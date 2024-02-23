@@ -1,6 +1,6 @@
 {
     "audio_model_name_or_path": "facebook/wav2vec2-base",
-    "output_dir": "outputs/audio_only",
+    "output_dir": "outputs/cb/audio_only",
     "overwrite_output_dir": true,
 
     "save_total_limit": 1,
@@ -13,8 +13,6 @@
     "do_regression": false,
     "do_train": true,
     "do_eval": true,
-    "train_file": "path/to/train.csv",
-    "validation_file": "path/to/dev.csv",
 
     "max_seq_length": 256,
     "per_device_train_batch_size": 1,
