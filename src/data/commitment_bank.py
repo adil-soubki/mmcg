@@ -10,6 +10,7 @@ from ..core.path import dirparent
 
 
 CB_DIR = os.path.join(dirparent(os.path.realpath(__file__), 3), "data", "cb")
+CB_TO_7_CLS = {v: k for k, v in enumerate(range(-3, 4))}
 CB_TO_5_CLS = {
     -3: 0,
     -2: 1,

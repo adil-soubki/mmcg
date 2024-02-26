@@ -1,6 +1,6 @@
 {
     "text_model_name_or_path": "google/flan-t5-base",
-    "audio_model_name_or_path": "facebook/wav2vec2-xls-r-300m",
+    "audio_model_name_or_path": "facebook/wav2vec2-base",
     "output_dir": "outputs/cb/multimodal",
     "overwrite_output_dir": true,
 
@@ -13,7 +13,6 @@
 
     "data_seed": 19,
     "data_num_folds": 5,
-    "data_fold": 0,
     "do_regression": false,
     "do_train": true,
     "do_eval": true,

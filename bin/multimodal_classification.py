@@ -20,7 +20,7 @@ from src.models.multimodal_classifier import MultimodalClassifier, ModelArgument
 @dataclasses.dataclass
 class DataArguments:
     data_num_folds: int
-    data_fold: int
+    data_fold: int = dataclasses.field(default=None)
     do_regression: bool = dataclasses.field(  # XXX: Unsupported currently.
         default=None,
         metadata={
@@ -42,16 +42,12 @@ class DataArguments:
     )
 
 
-def main(ctx: Context) -> None:
-    # Parse arguments.
-    parser = tf.HfArgumentParser((ModelArguments, DataArguments, tf.TrainingArguments))
-    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
-        # If we pass only one argument to the script and it's the path to a json file.
-        model_args, data_args, training_args = parser.parse_json_file(
-            json_file=os.path.abspath(sys.argv[1])
-        )
-    else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+def run(
+    ctx: Context,
+    model_args: ModelArguments,
+    data_args: DataArguments,
+    training_args: tf.TrainingArguments
+) -> None:
     # Make a directory per fold.
     training_args.output_dir = os.path.join(
         training_args.output_dir, f"fold_{data_args.data_fold}"
@@ -134,6 +130,26 @@ def main(ctx: Context) -> None:
         metrics = trainer.evaluate(eval_dataset=eval_dataset)
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
+
+
+def main(ctx: Context) -> None:
+    # Parse arguments.
+    parser = tf.HfArgumentParser((ModelArguments, DataArguments, tf.TrainingArguments))
+    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+        # If we pass only one argument to the script and it's the path to a json file.
+        model_args, data_args, training_args = parser.parse_json_file(
+            json_file=os.path.abspath(sys.argv[1])
+        )
+    else:
+        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    # Run the training loop.
+    if data_args.data_fold is not None:
+        return run(ctx, model_args, data_args, training_args)
+    output_dir = training_args.output_dir
+    for fold in range(data_args.data_num_folds):
+        training_args.output_dir = output_dir
+        data_args.data_fold = fold
+        run(ctx, model_args, data_args, training_args)
 
 
 if __name__ == "__main__":

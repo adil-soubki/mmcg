@@ -70,7 +70,7 @@ class MultimodalClassifier(torch.nn.Module):
                 text_hidden_size + audio_hidden_size,
                 self.classifier_proj_size,
             ),  # Dense projection layer.
-            torch.nn.ReLU(),  # Activation.
+            torch.nn.ReLU(),  # Activation. TODO: Dropout?
             torch.nn.Linear(self.classifier_proj_size, config.num_classes)  # Classifier.
         )
 
@@ -107,7 +107,7 @@ class MultimodalClassifier(torch.nn.Module):
         # Compute loss.
         loss = None
         if labels is not None:
-            # TODO: Consider weighting?
+            # TODO: Consider weighting? label_smoothing?
             loss_fct = torch.nn.CrossEntropyLoss()
             loss = loss_fct(logits.view(-1, self.config.num_classes), labels.view(-1))
         # Return.
