@@ -5,12 +5,15 @@ from typing import Literal, Optional
 import torch
 import transformers as tf
 
+from ..data.commitment_bank import load_opensmile
+
 
 PoolerType = Literal["max", "mean", "sum"]  # XXX: Unused currently.
 @dataclasses.dataclass
 class ModelArguments:
     text_model_name_or_path: Optional[str] = dataclasses.field(default=None)
     audio_model_name_or_path: Optional[str] = dataclasses.field(default=None)
+    use_opensmile_features: bool = dataclasses.field(default=False)
     num_classes: Optional[int] = dataclasses.field(default=None)
     # XXX: Unused currently
     text_pooler_type: Optional[PoolerType] = dataclasses.field(default="max")
@@ -56,15 +59,26 @@ class MultimodalClassifier(torch.nn.Module):
             else None
         )
         # Throw if neither is given.
-        if not self.text_model and not self.audio_model:
-            raise ValueError("No text or audio model specified.")
+        if (
+            not self.text_model and
+            not self.audio_model and
+            not self.config.use_opensmile_features
+        ):
+            raise ValueError("No text or audio model(s) specified.")
         # Initialize classification head.
         text_hidden_size = self.text_model.config.hidden_size if self.text_model else 0
         audio_hidden_size = self.audio_model.config.hidden_size if self.audio_model else 0
-        self.classifier_proj_size = text_hidden_size + audio_hidden_size
+        opensmile_hidden_size = (
+            load_opensmile().opensmile_features[0].shape[0]
+            if self.config.use_opensmile_features
+            else 0
+        )
+        self.classifier_proj_size = (
+            text_hidden_size + audio_hidden_size + opensmile_hidden_size
+        )
         self.classification_head = torch.nn.Sequential(
             torch.nn.Linear(
-                text_hidden_size + audio_hidden_size,
+                text_hidden_size + audio_hidden_size + opensmile_hidden_size,
                 self.classifier_proj_size,
             ),  # Dense projection layer.
             torch.nn.ReLU(),  # Activation. TODO: Dropout?
@@ -72,7 +86,13 @@ class MultimodalClassifier(torch.nn.Module):
         )
 
     def forward(
-        self, text_input_ids, text_attention_mask, audio_input_values, labels, **kwargs
+        self,
+        text_input_ids,
+        text_attention_mask,
+        audio_input_values,
+        opensmile_features,
+        labels,
+        **kwargs
     ):
         # https://github.com/huggingface/transformers/blob/v4.37.2/src/transformers/models/t5/modeling_t5.py#L2053
         device = self.classification_head[0].weight.device
@@ -87,6 +107,8 @@ class MultimodalClassifier(torch.nn.Module):
         audio_features = torch.tensor([]).to(device)
         if self.audio_model:
             audio_features = self.audio_model(audio_input_values).last_hidden_state
+        if not self.config.use_opensmile_features:
+            opensmile_features = torch.tensor([]).to(device)
         # Max Pooling. TODO: support more pooling options.
         text_pooled = (
             torch.max(text_features, dim=1).values
@@ -99,7 +121,9 @@ class MultimodalClassifier(torch.nn.Module):
             else audio_features
         )
         # Classification logits.
-        fusion_features = torch.cat([text_pooled, audio_pooled], dim=1)
+        fusion_features = torch.cat([
+            text_pooled, audio_pooled, opensmile_features
+        ], dim=1)
         logits = self.classification_head(fusion_features)
         # Compute loss.
         loss = None

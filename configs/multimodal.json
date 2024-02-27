@@ -1,6 +1,7 @@
 {
     "text_model_name_or_path": "google/flan-t5-base",
     "audio_model_name_or_path": "facebook/wav2vec2-base",
+    "use_opensmile_features": false,
     "output_dir": "outputs/cb/multimodal",
     "overwrite_output_dir": true,
 
