@@ -22,7 +22,8 @@ CB_TO_5_CLS = {
 }
 
 
-def load() -> datasets.Dataset:
+def load(num_labels: int) -> datasets.Dataset:
+    assert num_labels in (5, 7)
     df = pd.read_json(os.path.join(CB_DIR, "annotations.jsonl"), lines=True)
     # Load opensmile features.
     df = df.merge(load_opensmile(), on="audio_file", validate="1:1")
@@ -34,17 +35,24 @@ def load() -> datasets.Dataset:
     # Some rows (exactly 1) do not have a switchboard file to match so number is blank.
     df = df.replace("", np.nan).dropna().astype({"number": int, "cb_val": float})
     # XXX: Convert to 5 label classification for now.
-    df = df.assign(cb_val=df.cb_val.round().astype(int).map(lambda v: CB_TO_5_CLS[v]))
+    df = df.assign(cb_val_float=df.cb_val)
+    if num_labels == 5:
+        df = df.assign(cb_val=df.cb_val.round().astype(int).map(lambda v: CB_TO_5_CLS[v]))
+    elif num_labels == 7:
+        df = df.assign(cb_val=df.cb_val.round().astype(int).map(lambda v: CB_TO_7_CLS[v]))
+    # Create dataset.
     cb = datasets.Dataset.from_pandas(df, preserve_index=False)
     cb = cb.cast_column("audio", datasets.Audio(sampling_rate=16_000))
     cb = cb.add_column("opensmile_features", ftrs)
     return cb
 
 
-def load_kfold(fold: int, k: int = 5, seed: int = 42) -> datasets.DatasetDict:
+def load_kfold(
+    num_labels: int, fold: int, k: int = 5, seed: int = 42
+) -> datasets.DatasetDict:
     assert fold >= 0 and fold <= k - 1
     kf = StratifiedKFold(n_splits=k, random_state=seed, shuffle=True)
-    cb = load()
+    cb = load(num_labels)
     train_idxs, test_idxs = list(kf.split(cb, cb["cb_val"]))[fold]
     return datasets.DatasetDict({
         "train": cb.select(train_idxs),

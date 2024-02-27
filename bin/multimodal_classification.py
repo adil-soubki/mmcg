@@ -4,6 +4,7 @@
 import dataclasses
 import os
 import sys
+from copy import copy
 
 import datasets
 import evaluate
@@ -21,15 +22,9 @@ from src.models.multimodal_classifier import MultimodalClassifier, ModelArgument
 class DataArguments:
     data_num_folds: int
     data_fold: int = dataclasses.field(default=None)
-    do_regression: bool = dataclasses.field(  # XXX: Unsupported currently.
-        default=None,
-        metadata={
-            "help": (
-                "Whether to do regression instead of classification. If None, "
-                "will be inferred from the dataset."
-            )
-        },
-    )
+    do_regression: bool = dataclasses.field(default=False)
+    metric_for_classification: str = dataclasses.field(default="accuracy")
+    metric_for_regression: str = dataclasses.field(default="mae")
     max_seq_length: int = dataclasses.field(
         default=128,
         metadata={
@@ -60,14 +55,23 @@ def run(
     ctx.log.info(f"CUDA_VISIBLE_DEVICES: {os.environ['CUDA_VISIBLE_DEVICES']}")
     # Set seed before initializing model.
     tf.set_seed(training_args.seed)
+    # Configure for regression if needed.
+    metric = (
+        data_args.metric_for_regression
+        if data_args.do_regression
+        else data_args.metric_for_classification
+    )
+    training_args.greater_is_better = metric not in ("loss", "eval_loss", "mse", "mae")
     # Load training data.
     data = commitment_bank.load_kfold(
+        num_labels=model_args.num_labels,
         fold=data_args.data_fold,
         k=data_args.data_num_folds,
         seed=training_args.data_seed
     )
-    labels = sorted(set(data["train"]["cb_val"]))
-    model_args.num_classes = model_args.num_classes or len(labels)
+    if data_args.do_regression:
+        data = data.remove_columns("cb_val").rename_column("cb_val_float", "cb_val")
+        model_args.num_labels = 1  # NOTE: Just used to stratify.
     # Preprocess training data.
     feature_extractor = tf.AutoFeatureExtractor.from_pretrained(
         model_args.audio_model_name_or_path
@@ -106,14 +110,17 @@ def run(
     # Model training.
     model = MultimodalClassifier(model_args)
     def compute_metrics(eval_pred: tf.EvalPrediction):
-        predictions = np.argmax(eval_pred.predictions, axis=1)
+        if data_args.do_regression:
+            predictions = np.squeeze(eval_pred.predictions)
+        else:
+            predictions = np.argmax(eval_pred.predictions, axis=1)
         # Save predictions to file.
         cols = ["number", "clip_start", "clip_end", "cb_target", "label"]
         pdf = eval_dataset.to_pandas()[cols].assign(pred=predictions)
-        assert (pdf.label == eval_pred.label_ids).all()
+        assert np.allclose(pdf.label, eval_pred.label_ids)
         pdf.to_csv(os.path.join(training_args.output_dir, "preds.csv"))
         # Return metrics.
-        return evaluate.load(training_args.metric_for_best_model).compute(
+        return evaluate.combine([metric, "pearsonr"]).compute(
             predictions=predictions,
             references=eval_pred.label_ids
         )
@@ -145,11 +152,9 @@ def main(ctx: Context) -> None:
     # Run the training loop.
     if data_args.data_fold is not None:
         return run(ctx, model_args, data_args, training_args)
-    output_dir = training_args.output_dir
     for fold in range(data_args.data_num_folds):
-        training_args.output_dir = output_dir
         data_args.data_fold = fold
-        run(ctx, model_args, data_args, training_args)
+        run(ctx, copy(model_args), copy(data_args), copy(training_args))
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ class ModelArguments:
     text_model_name_or_path: Optional[str] = dataclasses.field(default=None)
     audio_model_name_or_path: Optional[str] = dataclasses.field(default=None)
     use_opensmile_features: bool = dataclasses.field(default=False)
-    num_classes: Optional[int] = dataclasses.field(default=None)
+    num_labels: int = dataclasses.field(default=None)
     # XXX: Unused currently
     text_pooler_type: Optional[PoolerType] = dataclasses.field(default="max")
     audio_pooler_type: Optional[PoolerType] = dataclasses.field(default="max")
@@ -27,7 +27,7 @@ def freeze_params(module: torch.nn.Module) -> None:
 
 
 # XXX: Unused currently.
-def pooler(features: torch.Tensor, dim:int, pooler_type: PoolerType) -> torch.Tensor:
+def pooler(features: torch.Tensor, dim: int, pooler_type: PoolerType) -> torch.Tensor:
     if not features.numel():
         return features  # Nothing to pool.
     if pooler_type == "max":
@@ -82,7 +82,7 @@ class MultimodalClassifier(torch.nn.Module):
                 self.classifier_proj_size,
             ),  # Dense projection layer.
             torch.nn.ReLU(),  # Activation. TODO: Dropout?
-            torch.nn.Linear(self.classifier_proj_size, config.num_classes)  # Classifier.
+            torch.nn.Linear(self.classifier_proj_size, config.num_labels)  # Classifier.
         )
 
     def forward(
@@ -128,8 +128,13 @@ class MultimodalClassifier(torch.nn.Module):
         # Compute loss.
         loss = None
         if labels is not None:
-            # TODO: Consider weighting? label_smoothing?
-            loss_fct = torch.nn.CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.config.num_classes), labels.view(-1))
+            if self.config.num_labels == 1:
+                loss_fct = torch.nn.MSELoss()
+                loss = loss_fct(logits.squeeze(), labels.squeeze())
+            else:
+                # TODO: Consider weighting? label_smoothing?
+                loss_fct = torch.nn.CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.config.num_labels), labels.view(-1))
+
         # Return.
         return tf.modeling_outputs.SequenceClassifierOutput(loss=loss, logits=logits)

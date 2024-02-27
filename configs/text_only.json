@@ -5,11 +5,12 @@
 
     "save_total_limit": 1,
     "load_best_model_at_end": true,
-    "metric_for_best_model": "accuracy",
-    "greater_is_better": true,
+    "metric_for_classification": "accuracy",
+    "metric_for_regression": "mae",
     "save_strategy": "epoch",
     "evaluation_strategy": "epoch",
 
+    "num_labels": 5,
     "data_seed": 19,
     "data_num_folds": 5,
     "do_regression": false,
