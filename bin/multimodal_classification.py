@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 import transformers as tf
 
-from src.core import nvidia
 from src.core.context import Context
 from src.core.app import harness
 from src.data import commitment_bank
@@ -51,7 +50,13 @@ class DataArguments:
 
 
 def update_metrics(
-    preds: list, refs: list, data_args: DataArguments, training_args: tf.TrainingArguments
+    preds: list,
+    refs: list,
+    trainer: tf.Trainer,
+    raw_args: dict,
+    model_args: ModelArguments,
+    data_args: DataArguments,
+    training_args: tf.TrainingArguments
 ):
     metric = (
         data_args.metric_for_regression
@@ -59,9 +64,11 @@ def update_metrics(
         else data_args.metric_for_classification
     )
     # Read the current configuration.
-    args = pd.read_json(os.path.abspath(sys.argv[1]), orient="index")[0].to_dict()
-    args["data_fold"] = data_args.data_fold
-    output_path = os.path.join(args["output_dir"], "all_results.csv")
+    raw_args["data_fold"] = data_args.data_fold
+    raw_args["current_epoch"] = trainer.state.epoch
+    output_path = os.path.join(
+        os.path.dirname(raw_args["output_dir"]), "all_results.csv"
+    )
     # Read in the current results.
     current = pd.DataFrame()
     with suppress(FileNotFoundError):
@@ -70,7 +77,7 @@ def update_metrics(
     results = evaluate.combine([metric, "pearsonr"]).compute(
         predictions=preds, references=refs
     )
-    new = pd.DataFrame([args | results])
+    new = pd.DataFrame([raw_args | results])
     new["last_modified"] = pd.Timestamp.now()
     # Normalize column names (fill new ones with None).
     if current.empty:
@@ -80,12 +87,15 @@ def update_metrics(
     })
     new = new.assign(**{c: None for c in set(current.columns) - set(new.columns)})
     # Update the results file.
-    on_keys = list(set(current.columns) - (set(results.keys()) | {"last_modified"}))
+    on_keys = list(
+        set(current.columns) - (set(results.keys()) | {"last_modified", "current_epoch"})
+    )
     update(current, new, on=on_keys).to_csv(output_path, index=False)
 
 
 def run(
     ctx: Context,
+    raw_args: dict,
     model_args: ModelArguments,
     data_args: DataArguments,
     training_args: tf.TrainingArguments
@@ -97,9 +107,6 @@ def run(
     ctx.log.info(f"Training parameters {training_args}")
     ctx.log.info(f"Data parameters {data_args}")
     ctx.log.info(f"Model parameters {model_args}")
-    # Select lowest memory GPU
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(nvidia.best_gpu())
-    ctx.log.info(f"CUDA_VISIBLE_DEVICES: {os.environ['CUDA_VISIBLE_DEVICES']}")
     # Set seed before initializing model.
     tf.set_seed(training_args.seed)
     # Configure for regression if needed.
@@ -158,6 +165,12 @@ def run(
     train_dataset, eval_dataset = data["train"], data["test"]
     # Model training.
     model = MultimodalClassifier(model_args)
+    trainer = tf.Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+    )
     def compute_metrics(eval_pred: tf.EvalPrediction):
         if data_args.do_regression:
             predictions = np.squeeze(eval_pred.predictions)
@@ -169,19 +182,16 @@ def run(
         assert np.allclose(pdf.label, eval_pred.label_ids)
         pdf.to_csv(os.path.join(training_args.output_dir, "preds.csv"))
         # Update aggregated evaluation results.
-        update_metrics(predictions, eval_pred.label_ids, data_args, training_args)
+        update_metrics(
+            predictions, eval_pred.label_ids, trainer,
+            raw_args, model_args, data_args, training_args
+        )
         # Return metrics.
         return evaluate.combine([metric, "pearsonr"]).compute(
             predictions=predictions,
             references=eval_pred.label_ids
         )
-    trainer = tf.Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        compute_metrics=compute_metrics,
-    )
+    trainer.compute_metrics = compute_metrics
     trainer.train()
     # Evaluation
     if training_args.do_eval:
@@ -198,14 +208,17 @@ def main(ctx: Context) -> None:
         model_args, data_args, training_args = parser.parse_json_file(
             json_file=os.path.abspath(sys.argv[1])
         )
+        raw_args = pd.read_json(
+            os.path.abspath(sys.argv[1]), orient="index"
+        )[0].to_dict()
     else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        parser.error("No configuration passed")
     # Run the training loop.
     if data_args.data_fold is not None:
         return run(ctx, model_args, data_args, training_args)
     for fold in range(data_args.data_num_folds):
         data_args.data_fold = fold
-        run(ctx, copy(model_args), copy(data_args), copy(training_args))
+        run(ctx, raw_args, copy(model_args), copy(data_args), copy(training_args))
 
 
 if __name__ == "__main__":
