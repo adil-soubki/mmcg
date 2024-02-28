@@ -25,11 +25,21 @@ class DataArguments:
     do_regression: bool = dataclasses.field(default=False)
     metric_for_classification: str = dataclasses.field(default="accuracy")
     metric_for_regression: str = dataclasses.field(default="mae")
-    max_seq_length: int = dataclasses.field(
+    text_max_length: int = dataclasses.field(
         default=128,
         metadata={
             "help": (
-                "The maximum total input sequence length after tokenization. "
+                "The maximum total text input sequence length after tokenization. "
+		"Sequences longer than this will be truncated, sequences shorter "
+		"will be padded."
+            )
+        },
+    )
+    audio_max_length: int = dataclasses.field(
+        default=16,
+        metadata={
+            "help": (
+                "The maximum audio length in seconds for feature extraction. "
 		"Sequences longer than this will be truncated, sequences shorter "
 		"will be padded."
             )
@@ -79,7 +89,7 @@ def run(
     tokenizer = tf.AutoTokenizer.from_pretrained(
         model_args.text_model_name_or_path
     ) if model_args.text_model_name_or_path else None
-    assert not tokenizer or (tokenizer.model_max_length >= data_args.max_seq_length)
+    assert not tokenizer or (tokenizer.model_max_length >= data_args.text_max_length)
     data = data.cast_column("audio", datasets.Audio(sampling_rate=16_000))
     def preprocess_fn(examples):
         dummy = [[0]] * len(examples[list(examples.keys())[0]])
@@ -88,14 +98,15 @@ def run(
         inputs = feature_extractor(
             audio_arrays,
             sampling_rate=getattr(feature_extractor, "sampling_rate", 16_000),
-            max_length=16_000,
+            padding="max_length",
+            max_length=data_args.audio_max_length * 16_000,
             truncation=True
         ) if feature_extractor else {"input_values": dummy}
         # Text processing.
         inputs |= tokenizer(
             examples["cb_target"],
             padding="max_length",
-            max_length=data_args.max_seq_length,
+            max_length=data_args.text_max_length,
             truncation=True
         ) if tokenizer else {"input_ids": dummy, "attention_mask": dummy}
         return inputs
