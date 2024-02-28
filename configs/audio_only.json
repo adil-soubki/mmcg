@@ -4,7 +4,6 @@
     "overwrite_output_dir": true,
 
     "save_total_limit": 1,
-    "load_best_model_at_end": true,
     "metric_for_classification": "accuracy",
     "metric_for_regression": "mae",
     "save_strategy": "epoch",
@@ -13,7 +12,7 @@
     "num_labels": 5,
     "data_seed": 19,
     "data_num_folds": 5,
-    "do_regression": false,
+    "do_regression": true,
     "do_train": true,
     "do_eval": true,
 

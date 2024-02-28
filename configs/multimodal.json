@@ -6,7 +6,6 @@
     "overwrite_output_dir": true,
 
     "save_total_limit": 1,
-    "load_best_model_at_end": true,
     "metric_for_classification": "accuracy",
     "metric_for_regression": "mae",
     "save_strategy": "epoch",

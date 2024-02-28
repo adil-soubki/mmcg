@@ -4,17 +4,20 @@
 import dataclasses
 import os
 import sys
+from contextlib import suppress
 from copy import copy
 
 import datasets
 import evaluate
 import numpy as np
+import pandas as pd
 import transformers as tf
 
 from src.core import nvidia
 from src.core.context import Context
 from src.core.app import harness
 from src.data import commitment_bank
+from src.core.df import update
 from src.models.multimodal_classifier import MultimodalClassifier, ModelArguments
 
 
@@ -47,6 +50,40 @@ class DataArguments:
     )
 
 
+def update_metrics(
+    preds: list, refs: list, data_args: DataArguments, training_args: tf.TrainingArguments
+):
+    metric = (
+        data_args.metric_for_regression
+        if data_args.do_regression
+        else data_args.metric_for_classification
+    )
+    # Read the current configuration.
+    args = pd.read_json(os.path.abspath(sys.argv[1]), orient="index")[0].to_dict()
+    args["data_fold"] = data_args.data_fold
+    output_path = os.path.join(args["output_dir"], "all_results.csv")
+    # Read in the current results.
+    current = pd.DataFrame()
+    with suppress(FileNotFoundError):
+        current = pd.read_csv(output_path)
+    # Compute the new results.
+    results = evaluate.combine([metric, "pearsonr"]).compute(
+        predictions=preds, references=refs
+    )
+    new = pd.DataFrame([args | results])
+    new["last_modified"] = pd.Timestamp.now()
+    # Normalize column names (fill new ones with None).
+    if current.empty:
+        current = pd.DataFrame(columns=new.columns)
+    current = current.assign(**{
+        c: None for c in set(new.columns) - set(current.columns)
+    })
+    new = new.assign(**{c: None for c in set(current.columns) - set(new.columns)})
+    # Update the results file.
+    on_keys = list(set(current.columns) - (set(results.keys()) | {"last_modified"}))
+    update(current, new, on=on_keys).to_csv(output_path, index=False)
+
+
 def run(
     ctx: Context,
     model_args: ModelArguments,
@@ -71,6 +108,7 @@ def run(
         if data_args.do_regression
         else data_args.metric_for_classification
     )
+    # XXX: Currently not needed.
     training_args.greater_is_better = metric not in ("loss", "eval_loss", "mse", "mae")
     # Load training data.
     data = commitment_bank.load_kfold(
@@ -130,6 +168,8 @@ def run(
         pdf = eval_dataset.to_pandas()[cols].assign(pred=predictions)
         assert np.allclose(pdf.label, eval_pred.label_ids)
         pdf.to_csv(os.path.join(training_args.output_dir, "preds.csv"))
+        # Update aggregated evaluation results.
+        update_metrics(predictions, eval_pred.label_ids, data_args, training_args)
         # Return metrics.
         return evaluate.combine([metric, "pearsonr"]).compute(
             predictions=predictions,
