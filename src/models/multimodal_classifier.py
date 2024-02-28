@@ -8,14 +8,13 @@ import transformers as tf
 from ..data.commitment_bank import load_opensmile
 
 
-PoolerType = Literal["max", "mean", "sum"]  # XXX: Unused currently.
+PoolerType = Literal["max", "mean", "sum"]
 @dataclasses.dataclass
 class ModelArguments:
     text_model_name_or_path: Optional[str] = dataclasses.field(default=None)
     audio_model_name_or_path: Optional[str] = dataclasses.field(default=None)
     use_opensmile_features: bool = dataclasses.field(default=False)
     num_labels: int = dataclasses.field(default=None)
-    # XXX: Unused currently
     text_pooler_type: Optional[PoolerType] = dataclasses.field(default="max")
     audio_pooler_type: Optional[PoolerType] = dataclasses.field(default="max")
 
@@ -26,22 +25,20 @@ def freeze_params(module: torch.nn.Module) -> None:
         param.requires_grad = False
 
 
-# XXX: Unused currently.
 def pooler(features: torch.Tensor, dim: int, pooler_type: PoolerType) -> torch.Tensor:
     if not features.numel():
         return features  # Nothing to pool.
     if pooler_type == "max":
-        pooler = lambda t, d: torch.max(t, dim=d).values
+        pool_fn = lambda t, dim: torch.max(t, dim=dim).values
     elif pooler_type == "mean":
-        pooler = torch.mean
+        pool_fn = torch.mean  # TODO: version that drops padded columns.
     elif pooler_type == "sum":
-        pooler = torch.sum
+        pool_fn = torch.sum
     else:
         raise ValueError(f"unknown pooler_type: {pooler_type}")
-    return pooler(features, dim=dim)
+    return pool_fn(features, dim=dim)
 
 
-# TODO: https://stackoverflow.com/questions/73948214/how-to-convert-a-pytorch-nn-module-into-a-huggingface-pretrainedmodel-object
 class MultimodalClassifier(torch.nn.Module):
     def __init__(self, config: ModelArguments):
         super().__init__()
@@ -110,15 +107,11 @@ class MultimodalClassifier(torch.nn.Module):
         if not self.config.use_opensmile_features:
             opensmile_features = torch.tensor([]).to(device)
         # Max Pooling. TODO: support more pooling options.
-        text_pooled = (
-            torch.max(text_features, dim=1).values
-            if text_features.numel()
-            else text_features
+        text_pooled = pooler(
+            text_features, dim=1, pooler_type=self.config.text_pooler_type
         )
-        audio_pooled = (
-            torch.max(audio_features, dim=1).values
-            if audio_features.numel()
-            else audio_features
+        audio_pooled = pooler(
+            audio_features, dim=1, pooler_type=self.config.audio_pooler_type
         )
         # Classification logits.
         fusion_features = torch.cat([

@@ -19,6 +19,8 @@
 
     "text_max_length": 256,
     "audio_max_length": 16,
+    "text_pooler_type": "max",
+    "audio_pooler_type": "max",
     "per_device_train_batch_size": 1,
     "per_device_eval_batch_size": 1,
     "learning_rate": 2e-5,
