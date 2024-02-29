@@ -108,7 +108,7 @@ class MultimodalClassifier(torch.nn.Module):
             ).last_hidden_state
         audio_features = torch.tensor([]).to(device)
         if self.audio_model:
-            audio_features = self.audio_model(audio_input_values).last_hidden_state
+            audio_features = self.audio_model.encoder(audio_input_values).last_hidden_state
         if not self.config.use_opensmile_features:
             opensmile_features = torch.tensor([]).to(device)
         # Max Pooling. TODO: support more pooling options.

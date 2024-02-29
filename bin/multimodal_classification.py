@@ -147,6 +147,8 @@ def run(
             max_length=data_args.audio_max_length * 16_000,
             truncation=True
         ) if feature_extractor else {"input_values": dummy}
+        if "input_features" in inputs:  # Whisper names them differently.
+            inputs["input_values"] = inputs.pop("input_features")
         # Text processing.
         inputs |= tokenizer(
             examples["cb_target"],
