@@ -17,9 +17,10 @@ class ModelArguments:
     num_labels: int = dataclasses.field(default=None)
     text_pooler_type: Optional[PoolerType] = dataclasses.field(default="max")
     audio_pooler_type: Optional[PoolerType] = dataclasses.field(default="max")
+    freeze_text_model: bool = dataclasses.field(default=False)
+    freeze_audio_model: bool = dataclasses.field(default=False)
 
 
-# XXX: Unused currently.
 def freeze_params(module: torch.nn.Module) -> None:
     for param in module.parameters():
         param.requires_grad = False
@@ -49,12 +50,16 @@ class MultimodalClassifier(torch.nn.Module):
             if config.text_model_name_or_path
             else None
         )
+        if self.text_model and self.config.freeze_text_model:
+            freeze_params(self.text_model)
         # Load the audio model.
         self.audio_model = (
             tf.AutoModel.from_pretrained(config.audio_model_name_or_path)
             if config.audio_model_name_or_path
             else None
         )
+        if self.audio_model and self.config.freeze_audio_model:
+            freeze_params(self.audio_model)
         # Throw if neither is given.
         if (
             not self.text_model and
