@@ -1,5 +1,5 @@
 {
-    "text_model_name_or_path": "google/flan-t5-base",
+    "text_model_name_or_path": "google-bert/bert-base-uncased",
     "audio_model_name_or_path": "openai/whisper-base",
     "use_opensmile_features": false,
     "freeze_audio_model": false,

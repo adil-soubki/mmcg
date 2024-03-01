@@ -100,15 +100,15 @@ class MultimodalClassifier(torch.nn.Module):
         device = self.classification_head[0].weight.device
         text_features = torch.tensor([]).to(device)
         if self.text_model:
-            text_decoder_input_ids = self.text_model._shift_right(text_input_ids)
             text_features = self.text_model(
                 input_ids=text_input_ids,
-                decoder_input_ids=text_decoder_input_ids,
                 attention_mask=text_attention_mask
             ).last_hidden_state
         audio_features = torch.tensor([]).to(device)
-        if self.audio_model:
+        if self.audio_model and self.audio_model.__class__.__name__ == "WhisperModel":
             audio_features = self.audio_model.encoder(audio_input_values).last_hidden_state
+        elif self.audio_model:
+            audio_features = self.audio_model(audio_input_values).last_hidden_state
         if not self.config.use_opensmile_features:
             opensmile_features = torch.tensor([]).to(device)
         # Max Pooling. TODO: support more pooling options.
