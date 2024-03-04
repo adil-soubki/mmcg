@@ -9,6 +9,7 @@ from ..data.commitment_bank import load_opensmile
 
 
 PoolerType = Literal["max", "mean", "sum"]
+FusionStrategy = Literal["early", "late"]
 @dataclasses.dataclass
 class ModelArguments:
     text_model_name_or_path: Optional[str] = dataclasses.field(default=None)
@@ -19,6 +20,7 @@ class ModelArguments:
     audio_pooler_type: Optional[PoolerType] = dataclasses.field(default="max")
     freeze_text_model: bool = dataclasses.field(default=False)
     freeze_audio_model: bool = dataclasses.field(default=False)
+    #  fusion_strategy: FusionStrategy
 
 
 def freeze_params(module: torch.nn.Module) -> None:
@@ -38,6 +40,16 @@ def pooler(features: torch.Tensor, dim: int, pooler_type: PoolerType) -> torch.T
     else:
         raise ValueError(f"unknown pooler_type: {pooler_type}")
     return pool_fn(features, dim=dim)
+
+
+def classification_head(
+    input_size: int, proj_size: int, output_size: int
+) -> torch.nn.Sequential:
+    return torch.nn.Sequential(
+        torch.nn.Linear(input_size, proj_size),  # Dense projection layer.
+        torch.nn.ReLU(),                         # Activation. TODO: Dropout?
+        torch.nn.Linear(proj_size, output_size)  # Classifier.
+    )
 
 
 class MultimodalClassifier(torch.nn.Module):
@@ -86,6 +98,21 @@ class MultimodalClassifier(torch.nn.Module):
             torch.nn.ReLU(),  # Activation. TODO: Dropout?
             torch.nn.Linear(self.classifier_proj_size, config.num_labels)  # Classifier.
         )
+        # Initialize late fusion classification heads.
+        #  self.text_classification_head = classification_head(
+        #      text_hidden_size, text_hidden_size, config.num_labels
+        #  )
+        #  self.audio_classification_head = classification_head(
+        #      audio_hidden_size, audio_hidden_size, config.num_labels
+        #  )
+        #  self.opensmile_classification_head = classification_head(
+        #      opensmile_hidden_size, opensmile_hidden_size, config.num_labels
+        #  )
+        #  num_models = 3 if self.config.use_opensmile_features else 2
+        #  late_hidden_size = num_models * config.num_labels
+        #  self.late_classification_head = classification_head(
+        #      late_hidden_size, late_hidden_size, config.num_labels
+        #  )
 
     def forward(
         self,

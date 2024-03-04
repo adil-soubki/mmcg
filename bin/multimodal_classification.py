@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """An example script"""
 import dataclasses
+import hashlib
 import os
 import sys
-from contextlib import suppress
 from copy import copy
 
 import datasets
@@ -15,8 +15,8 @@ import transformers as tf
 
 from src.core.context import Context
 from src.core.app import harness
+from src.core.path import dirparent
 from src.data import commitment_bank
-from src.core.df import update
 from src.models.multimodal_classifier import MultimodalClassifier, ModelArguments
 
 
@@ -52,50 +52,29 @@ class DataArguments:
 def update_metrics(
     preds: list,
     refs: list,
+    metric: str,
     trainer: tf.Trainer,
-    raw_args: dict,
     model_args: ModelArguments,
     data_args: DataArguments,
     training_args: tf.TrainingArguments
 ):
-    metric = (
-        data_args.metric_for_regression
-        if data_args.do_regression
-        else data_args.metric_for_classification
-    )
-    # Read the current configuration.
-    raw_args["data_fold"] = data_args.data_fold
-    raw_args["current_epoch"] = trainer.state.epoch
-    output_path = os.path.join(
-        os.path.dirname(raw_args["output_dir"]), "all_results.csv"
-    )
-    # Read in the current results.
-    current = pd.DataFrame()
-    with suppress(FileNotFoundError):
-        current = pd.read_csv(output_path)
+    # Get run id and output dir.
+    args = vars(model_args) | vars(data_args) | training_args.to_dict()
+    run_id = hashlib.md5(str(sorted(args.items())).encode("utf-8")).hexdigest()
+    output_dir = os.path.join(dirparent(args["output_dir"], 2), "runs")
+    os.makedirs(output_dir, exist_ok=True)
     # Compute the new results.
     results = evaluate.combine([metric, "pearsonr"]).compute(
         predictions=preds, references=refs
     )
-    new = pd.DataFrame([raw_args | results])
-    new["last_modified"] = pd.Timestamp.now()
-    # Normalize column names (fill new ones with None).
-    if current.empty:
-        current = pd.DataFrame(columns=new.columns)
-    current = current.assign(**{
-        c: None for c in set(new.columns) - set(current.columns)
-    })
-    new = new.assign(**{c: None for c in set(current.columns) - set(new.columns)})
-    # Update the results file.
-    on_keys = list(
-        set(current.columns) - (set(results.keys()) | {"last_modified", "current_epoch"})
-    )
-    update(current, new, on=on_keys).to_csv(output_path, index=False)
+    df = pd.DataFrame([args | results])
+    df["last_modified"] = pd.Timestamp.now()
+    df["current_epoch"] = trainer.state.epoch
+    df.to_csv(os.path.join(output_dir, f"{run_id}.csv"), index=False)
 
 
 def run(
     ctx: Context,
-    raw_args: dict,
     model_args: ModelArguments,
     data_args: DataArguments,
     training_args: tf.TrainingArguments
@@ -185,8 +164,8 @@ def run(
         pdf.to_csv(os.path.join(training_args.output_dir, "preds.csv"))
         # Update aggregated evaluation results.
         update_metrics(
-            predictions, eval_pred.label_ids, trainer,
-            raw_args, model_args, data_args, training_args
+            predictions, eval_pred.label_ids, metric, trainer,
+            model_args, data_args, training_args
         )
         # Return metrics.
         return evaluate.combine([metric, "pearsonr"]).compute(
@@ -210,9 +189,6 @@ def main(ctx: Context) -> None:
         model_args, data_args, training_args = parser.parse_json_file(
             json_file=os.path.abspath(sys.argv[1])
         )
-        raw_args = pd.read_json(
-            os.path.abspath(sys.argv[1]), orient="index"
-        )[0].to_dict()
     else:
         parser.error("No configuration passed")
     # Run the training loop.
@@ -220,7 +196,7 @@ def main(ctx: Context) -> None:
         return run(ctx, model_args, data_args, training_args)
     for fold in range(data_args.data_num_folds):
         data_args.data_fold = fold
-        run(ctx, raw_args, copy(model_args), copy(data_args), copy(training_args))
+        run(ctx, copy(model_args), copy(data_args), copy(training_args))
 
 
 if __name__ == "__main__":
