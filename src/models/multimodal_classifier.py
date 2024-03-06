@@ -20,7 +20,7 @@ class ModelArguments:
     audio_pooler_type: Optional[PoolerType] = dataclasses.field(default="max")
     freeze_text_model: bool = dataclasses.field(default=False)
     freeze_audio_model: bool = dataclasses.field(default=False)
-    #  fusion_strategy: FusionStrategy
+    fusion_strategy: FusionStrategy = dataclasses.field(default="early")
 
 
 def freeze_params(module: torch.nn.Module) -> None:
@@ -47,6 +47,7 @@ def classification_head(
 ) -> torch.nn.Sequential:
     return torch.nn.Sequential(
         torch.nn.Linear(input_size, proj_size),  # Dense projection layer.
+        #  torch.nn.LayerNorm(proj_size),        # XXX: Make optional?
         torch.nn.ReLU(),                         # Activation. TODO: Dropout?
         torch.nn.Linear(proj_size, output_size)  # Classifier.
     )
@@ -95,24 +96,20 @@ class MultimodalClassifier(torch.nn.Module):
                 text_hidden_size + audio_hidden_size + opensmile_hidden_size,
                 self.classifier_proj_size,
             ),  # Dense projection layer.
+            #  torch.nn.LayerNorm(self.classifier_proj_size),  XXX: Make optional?
             torch.nn.ReLU(),  # Activation. TODO: Dropout?
             torch.nn.Linear(self.classifier_proj_size, config.num_labels)  # Classifier.
         )
         # Initialize late fusion classification heads.
-        #  self.text_classification_head = classification_head(
-        #      text_hidden_size, text_hidden_size, config.num_labels
-        #  )
-        #  self.audio_classification_head = classification_head(
-        #      audio_hidden_size, audio_hidden_size, config.num_labels
-        #  )
-        #  self.opensmile_classification_head = classification_head(
-        #      opensmile_hidden_size, opensmile_hidden_size, config.num_labels
-        #  )
-        #  num_models = 3 if self.config.use_opensmile_features else 2
-        #  late_hidden_size = num_models * config.num_labels
-        #  self.late_classification_head = classification_head(
-        #      late_hidden_size, late_hidden_size, config.num_labels
-        #  )
+        self.text_classification_head = classification_head(
+            text_hidden_size, text_hidden_size, config.num_labels
+        )
+        self.audio_classification_head = classification_head(
+            audio_hidden_size, audio_hidden_size, config.num_labels
+        )
+        self.opensmile_classification_head = classification_head(
+            opensmile_hidden_size, opensmile_hidden_size, config.num_labels
+        )
 
     def forward(
         self,
@@ -138,7 +135,7 @@ class MultimodalClassifier(torch.nn.Module):
             audio_features = self.audio_model(audio_input_values).last_hidden_state
         if not self.config.use_opensmile_features:
             opensmile_features = torch.tensor([]).to(device)
-        # Max Pooling. TODO: support more pooling options.
+        # Pooling.
         text_pooled = pooler(
             text_features, dim=1, pooler_type=self.config.text_pooler_type
         )
@@ -146,10 +143,24 @@ class MultimodalClassifier(torch.nn.Module):
             audio_features, dim=1, pooler_type=self.config.audio_pooler_type
         )
         # Classification logits.
-        fusion_features = torch.cat([
-            text_pooled, audio_pooled, opensmile_features
-        ], dim=1)
-        logits = self.classification_head(fusion_features)
+        if self.config.fusion_strategy == "early":
+            fusion_features = torch.cat([
+                text_pooled, audio_pooled, opensmile_features
+            ], dim=1)
+            logits = self.classification_head(fusion_features)
+        elif self.config.fusion_strategy == "late":
+            text_logits = torch.tensor([]).to(device)
+            if self.text_model:
+                text_logits = self.text_classification_head(text_pooled)
+            audio_logits = torch.tensor([]).to(device)
+            if self.audio_model:
+                audio_logits = self.audio_classification_head(audio_pooled)
+            opensmile_logits = torch.tensor([]).to(device)
+            if self.config.use_opensmile_features:
+                opensmile_logits = self.opensmile_classification_head(opensmile_features)
+            logits = torch.cat([text_logits, audio_logits, opensmile_logits]).mean()
+        else:
+            raise ValueError
         # Compute loss.
         loss = None
         if labels is not None:

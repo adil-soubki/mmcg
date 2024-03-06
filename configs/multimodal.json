@@ -3,6 +3,8 @@
     "audio_model_name_or_path": "openai/whisper-base",
     "use_opensmile_features": false,
     "freeze_audio_model": false,
+    "freeze_text_model": false,
+    "fusion_strategy": "late",
     "output_dir": "outputs/cb/multimodal",
     "overwrite_output_dir": true,
 
