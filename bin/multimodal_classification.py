@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import transformers as tf
 
-from src.core.context import Context
+from src.core.context import Context, get_context
 from src.core.app import harness
 from src.core.path import dirparent
 from src.data import commitment_bank
@@ -58,10 +58,16 @@ def update_metrics(
     data_args: DataArguments,
     training_args: tf.TrainingArguments
 ):
+    logger = get_context().log
     # Get run id and output dir.
     args = vars(model_args) | vars(data_args) | training_args.to_dict()
+    for key in ("data_fold", "output_dir", "logging_dir"):
+        del args[key]  # Do not use in run_id.
     run_id = hashlib.md5(str(sorted(args.items())).encode("utf-8")).hexdigest()
-    output_dir = os.path.join(dirparent(args["output_dir"], 2), "runs")
+    run_id += f"-{data_args.data_fold}"
+    args["data_fold"] = data_args.data_fold
+    logger.info("\nRUN_ID: %s", run_id)
+    output_dir = os.path.join(dirparent(training_args.output_dir, 2), "runs")
     os.makedirs(output_dir, exist_ok=True)
     # Compute the new results.
     results = evaluate.combine([metric, "pearsonr"]).compute(
@@ -71,6 +77,10 @@ def update_metrics(
     df["last_modified"] = pd.Timestamp.now()
     df["current_epoch"] = trainer.state.epoch
     df.to_csv(os.path.join(output_dir, f"{run_id}.csv"), index=False)
+    # Write out predictions.
+    pd.DataFrame({"refs": refs, "preds": preds, "run_id": run_id}).to_csv(
+        os.path.join(output_dir, f"{run_id}.preds.csv"), index=False
+    )
 
 
 def run(

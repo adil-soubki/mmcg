@@ -96,7 +96,7 @@ class MultimodalClassifier(torch.nn.Module):
                 text_hidden_size + audio_hidden_size + opensmile_hidden_size,
                 self.classifier_proj_size,
             ),  # Dense projection layer.
-            #  torch.nn.LayerNorm(self.classifier_proj_size),  XXX: Make optional?
+            #  torch.nn.LayerNorm(self.classifier_proj_size),  # XXX: Make optional?
             torch.nn.ReLU(),  # Activation. TODO: Dropout?
             torch.nn.Linear(self.classifier_proj_size, config.num_labels)  # Classifier.
         )
